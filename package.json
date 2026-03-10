@@ -1,0 +1,16 @@
+{
+  "name": "poker-prediction-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail -n BACKEND,FRONTEND -c green,magenta \"npm run dev:backend\" \"npm run dev:frontend:wait\"",
+    "dev:backend": "python -m uvicorn poker_advisor.api:app --host 127.0.0.1 --port 8000 --reload",
+    "dev:frontend": "npm --prefix poker_advisor_ui run dev",
+    "dev:frontend:wait": "wait-on http-get://127.0.0.1:8000/health && echo Backend ready: http://127.0.0.1:8000/health && npm --prefix poker_advisor_ui run dev",
+    "dev:wait-backend": "wait-on http-get://127.0.0.1:8000/health && echo Backend ready: http://127.0.0.1:8000/health"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1",
+    "wait-on": "^8.0.1"
+  }
+}
