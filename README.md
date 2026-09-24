@@ -1,105 +1,132 @@
-# Poker Advisor (Educational Texas Hold'em)
+# Poker Advisor
 
-Educational Texas Hold'em assistant with:
+[![CI](https://github.com/phenstee/poker_prediction/actions/workflows/ci.yml/badge.svg)](https://github.com/phenstee/poker_prediction/actions/workflows/ci.yml)
 
-- Python backend API (`/health`, `/advice`)
-- React/Vite frontend using manual input only
-- CLI mode for local hand analysis
+A full-stack Texas Hold'em decision assistant. Enter your hole cards, the board, the pot, and the bet you face; it estimates your equity with a Monte Carlo simulation and recommends an action (fold / check / call / bet / raise) with a bet size.
 
-## Safety
+**Stack:** Python · FastAPI · scikit-learn · React 19 · TypeScript · Vite · Tailwind · Zustand · TanStack Query · pytest · Vitest · GitHub Actions
 
-- Learning and offline analysis only.
-- No poker site integration.
-- No overlays, scraping, or automation.
-- Manual user input only.
+> Educational and offline analysis only. Input is manual; there is no poker-site integration, screen reading, or automation.
 
-## Backend API
+## How it works
 
-Backend entrypoint: `poker_advisor/api.py`
+```
+ React UI ──POST /advice──▶ FastAPI ──▶ Monte Carlo equity ──▶ decision policy ──▶ action + sizing
+                                        (treys evaluator)      ├─ rule engine (default)
+                                                               └─ ML classifier (mode="ml")
+```
 
-Routes:
+### 1. Equity estimation (`poker_advisor/equity.py`)
 
-- `GET /health` -> `{ "status": "ok" }`
-- `POST /advice` -> advice JSON
+Deals the unknown cards at random thousands of times, evaluates every showdown with the [`treys`](https://github.com/ihendley/treys) hand evaluator, and reports `equity = (wins + ties / 2) / iterations`.
 
-## One-command dev startup (backend + frontend)
+- Sample counts scale by street: 20k preflop, 10k flop, 7.5k turn, 5k river.
+- Supports 1–8 opponents.
+- Opponents can hold random cards or be restricted to a preset range (`tight`, `standard`, `loose`; see `ranges.py`) through rejection sampling.
 
-From repo root:
+### 2. Decision policy (`poker_advisor/decision.py`)
+
+Compares equity with pot odds, `facing_bet / (pot + facing_bet)`:
+
+| Situation | Rule | Action |
+|---|---|---|
+| Facing a bet | equity < pot odds − 2% | FOLD |
+| Facing a bet | equity ≥ 65% | RAISE |
+| Facing a bet | otherwise | CALL |
+| No bet | equity ≥ 62% | BET |
+| No bet | otherwise | CHECK |
+
+Bet sizing depends on the street (½ pot preflop, ⅔ pot on the flop and turn, ¾ pot on the river). Raises go to the bet plus the larger of ⅔·pot and 2×bet. Every size respects min/max raise limits, is capped by the effective stack, and is rounded to 0.5 bb.
+
+### 3. ML policy (`ml/`)
+
+A scikit-learn `RandomForestClassifier` inside a `Pipeline` that one-hot encodes the street. It predicts the action from 8 features: street, opponents, pot, facing bet, stack, bluff flag, equity, and pot odds.
+
+- `ml/train_data.py` generates a synthetic dataset. It samples random game states, computes equity, and labels each row with the rule engine's action.
+- `ml/train.py` trains with a stratified 80/20 split and reports a classification report.
+- Because the labels come from the rule engine, the model **learns to reproduce that policy** (~99% validation accuracy). It does not learn a stronger one. Training on real hand outcomes (expected value, EV) instead of rule labels would be the next step toward a policy that could beat the rules.
+
+## Getting started
+
+Requires Python 3.11+ and Node 20+.
 
 ```bash
-npm install
 pip install -r requirements-dev.txt
-npm run dev
-```
-
-This starts:
-
-- Backend at `http://127.0.0.1:8000`
-- Frontend at `http://localhost:5173`
-- Wait check that prints: `Backend ready: http://127.0.0.1:8000/health`
-
-### Windows PowerShell
-
-```powershell
-cd C:\Users\yifei\Poker_prediction
 npm install
-python -m pip install -r requirements-dev.txt
+npm --prefix poker_advisor_ui install
+
+# optional: train the model used by mode="ml" (~3 s)
+python -m ml.train --data data/train_balanced.csv --model models/action_model_balanced.joblib
+
 npm run dev
 ```
 
-## Frontend API behavior (fixed)
+- Backend: http://127.0.0.1:8000 (interactive docs at `/docs`)
+- Frontend: http://localhost:5173 (proxies `/api/*` to the backend)
 
-- Frontend defaults to `/api` (proxy mode) in dev.
-- Vite proxy forwards `/api/*` to backend origin (default `http://localhost:8000`).
-- If `VITE_API_BASE_URL` is accidentally set to frontend origin (for example `http://localhost:5173`), UI warns and auto-falls back to `/api`.
+A terminal version is also available: `python -m poker_advisor.cli`.
 
-## Frontend env
+## API
 
-Create `poker_advisor_ui/.env` (or copy `.env.example`):
+`GET /health` → `{"status": "ok"}`
 
-```bash
-VITE_BACKEND_ORIGIN=http://localhost:8000
-# Optional: leave unset in dev
-# VITE_API_BASE_URL=
-```
-
-## Health checks
-
-- Browser UI runs health check on load and on Retry.
-- Manual check:
-
-```bash
-curl http://127.0.0.1:8000/health
-```
-
-Expected:
+`POST /advice`
 
 ```json
-{"status":"ok"}
+{
+  "hero_hole": ["Ah", "Kh"],
+  "board": ["Qh", "7h", "2c"],
+  "street": "flop",
+  "pot_bb": 12,
+  "facing_bet_bb": 8,
+  "num_opponents": 1,
+  "opponent_range": "standard",
+  "mode": "rule"
+}
 ```
 
-## CLI usage
-
-```bash
-python -m poker_advisor.cli
+```json
+{
+  "action": "CALL",
+  "equity": 0.629,
+  "pot_odds": 0.4,
+  "samples": 10000,
+  "reason": "equity above pot odds",
+  "mode_used": "rule",
+  "recommended_raise_bb": null,
+  "recommended_raise_label": null,
+  "raise_reason": null
+}
 ```
+
+Optional fields: `num_opponents` (1–8), `opponent_range` (`tight` | `standard` | `loose`), `effective_stack_bb`, `min_raise_bb`, `max_raise_bb`, `allow_bluffs`, `mode` (`rule` | `ml`).
+
+Errors:
+
+- `422`: invalid schema, or a board that doesn't match the street
+- `400`: invalid or duplicate cards
+- `503`: `mode="ml"` without a trained model
 
 ## Tests
 
-Backend tests:
-
 ```bash
-python -m pytest -q
+python -m pytest -q                        # backend: cards, equity, decision policy, API
+npm --prefix poker_advisor_ui test         # frontend: store and card utilities
 ```
 
-Frontend tests:
+CI runs both suites and the production frontend build on every push.
 
-```bash
-npm --prefix poker_advisor_ui run test
+## Project layout
+
+```
+poker_advisor/      core engine: cards, equity, ranges, decision policy, FastAPI app, CLI
+ml/                 synthetic data generation, training, evaluation, inference
+data/               generated training datasets
+poker_advisor_ui/   React + TypeScript frontend
+tests/              pytest suite
 ```
 
-Frontend build:
+## Limitations
 
-```bash
-npm --prefix poker_advisor_ui run build
-```
+- The rule engine uses fixed equity thresholds. It is not a game-theory-optimal (GTO) solver, and it ignores position, stack-to-pot ratio, and drawing odds.
+- By default opponents hold random hands, which overstates hero equity when facing a bet. Pass `opponent_range` to get a more realistic estimate.

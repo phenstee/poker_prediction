@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+
+# Trained model artifacts (regenerate with: python -m ml.train ...)
+models/*.joblib
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
