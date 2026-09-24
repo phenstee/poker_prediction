@@ -14,11 +14,12 @@ try:
 except ImportError:  # pragma: no cover
     joblib = None
 
-from .decision import DecisionConfig, recommend_action, recommend_raise_size
+from .decision import DecisionConfig, compute_pot_odds, recommend_action, recommend_raise_size
 from .equity import estimate_equity
 
 Street = Literal["preflop", "flop", "turn", "river"]
 AdviceMode = Literal["rule", "ml"]
+OpponentRange = Literal["tight", "standard", "loose"]
 MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "action_model_balanced.joblib"
 
 
@@ -28,7 +29,7 @@ class AdviceRequest(BaseModel):
     street: Street
     mode: AdviceMode = "rule"
     num_opponents: int = Field(default=1, ge=1, le=8)
-    opponents_by_street: dict[Street, int] | None = None
+    opponent_range: OpponentRange | None = None
     pot_bb: float = Field(ge=0)
     facing_bet_bb: float = Field(ge=0)
     allow_bluffs: bool = False
@@ -155,11 +156,13 @@ def advice(payload: AdviceRequest) -> AdviceResponse:
             hero_hole_cards=list(payload.hero_hole),
             board_cards=payload.board,
             num_opponents=payload.num_opponents,
+            opponent_range=payload.opponent_range,
         )
-    except Exception as exc:  # pragma: no cover - defensive API boundary
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     effective_stack = payload.effective_stack_bb if payload.effective_stack_bb is not None else 100
+    pot_odds = compute_pot_odds(payload.pot_bb, payload.facing_bet_bb)
 
     if payload.mode == "ml":
         ml_action, ml_reason = _predict_ml_action(
@@ -170,7 +173,7 @@ def advice(payload: AdviceRequest) -> AdviceResponse:
             effective_stack_bb=effective_stack,
             allow_bluffs=payload.allow_bluffs,
             equity=equity_result.equity,
-            pot_odds=(payload.facing_bet_bb / (payload.pot_bb + payload.facing_bet_bb)) if payload.facing_bet_bb > 0 else 0.0,
+            pot_odds=pot_odds,
         )
 
         sizing = recommend_raise_size(
@@ -192,7 +195,7 @@ def advice(payload: AdviceRequest) -> AdviceResponse:
         return AdviceResponse(
             action=ml_action,
             equity=equity_result.equity,
-            pot_odds=(payload.facing_bet_bb / (payload.pot_bb + payload.facing_bet_bb)) if payload.facing_bet_bb > 0 else 0.0,
+            pot_odds=pot_odds,
             samples=equity_result.iterations,
             reason=ml_reason,
             mode_used="ml",
