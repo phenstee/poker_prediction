@@ -74,12 +74,15 @@ def _street_step(state: GameState, *, opponent_range: str | None, seed: int | No
         iterations=equity_result.iterations,
         hand_class=equity_result.hand_class,
         effective_stack_bb=state.effective_stack_bb,
+        street=state.street,
         min_raise=state.min_raise,
         max_raise=state.max_raise,
         config=DecisionConfig(),
     )
 
     print(f"Suggested action: {advice.action}")
+    if advice.recommended_raise_label:
+        print(f"Sizing: {advice.recommended_raise_label}")
     print(f"Equity: {advice.equity:.3f} (N={advice.iterations}, backend={equity_result.backend})")
     print(f"Pot odds: {advice.pot_odds:.3f}")
     print(f"Hand class: {advice.hand_class}")

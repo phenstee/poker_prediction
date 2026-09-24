@@ -37,7 +37,10 @@ def _round_to_half_bb(value: float) -> float:
     return round(value * 2) / 2
 
 
-def _format_size_label(action: str, amount_bb: float, facing_bet: float) -> str:
+def _format_size_label(action: str, amount_bb: float, facing_bet: float, all_in: bool = False) -> str:
+    if all_in:
+        return f"All-in {amount_bb:.1f} bb"
+
     if action == "BET":
         return f"Bet {amount_bb:.1f} bb"
 
@@ -85,7 +88,7 @@ def recommend_raise_size(
         if size < min_size:
             size = min_size
 
-        label = _format_size_label(action, size, facing_bet)
+        label = _format_size_label(action, size, facing_bet, all_in=stack_cap is not None and size >= stack_cap)
         reason = (
             "Heuristic value bet sizing based on street and pot size. "
             + ("Capped by effective stack." if stack_cap is not None else "Effective stack missing; used pot-based cap.")
@@ -118,7 +121,7 @@ def recommend_raise_size(
     if size <= facing_bet:
         return None
 
-    label = _format_size_label(action, size, facing_bet)
+    label = _format_size_label(action, size, facing_bet, all_in=stack_cap is not None and size >= stack_cap)
     reason = (
         "Heuristic raise-to size using pot pressure and minimum raise rules. "
         + ("Capped by effective stack." if stack_cap is not None else "Effective stack missing; used fallback cap pot + 3x bet.")
@@ -142,7 +145,8 @@ def recommend_action(
     cfg = config or DecisionConfig()
     pot_odds = compute_pot_odds(pot_size, facing_bet)
 
-    can_raise = effective_stack_bb > 0 and (min_raise is None or min_raise > 0)
+    # Raising needs chips beyond the call; with a stack at or below the bet, calling is already all-in.
+    can_raise = effective_stack_bb > facing_bet and (min_raise is None or min_raise > 0)
 
     if facing_bet > 0:
         if equity < pot_odds - cfg.margin:
@@ -187,6 +191,10 @@ def recommend_action(
         min_raise=min_raise,
         max_raise=max_raise,
     )
+
+    if action == "RAISE" and sizing is None:
+        action = "CALL"
+        reason = "no legal raise size fits the stack and raise limits"
 
     recommended_raise_bb = None
     recommended_raise_label = None

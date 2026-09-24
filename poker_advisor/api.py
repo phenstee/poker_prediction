@@ -186,6 +186,10 @@ def advice(payload: AdviceRequest) -> AdviceResponse:
             max_raise=payload.max_raise_bb,
         )
 
+        if ml_action == "RAISE" and sizing is None:
+            ml_action = "CALL"
+            ml_reason = f"{ml_reason}; no legal raise size fits the stack and raise limits, so calling instead"
+
         recommended_raise_bb = None
         recommended_raise_label = None
         raise_reason = None
