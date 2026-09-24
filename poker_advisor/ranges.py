@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from functools import lru_cache
 from random import Random
 from typing import Iterable
 
-from .cards import card_int_to_str
 
 RANGE_PRESETS: dict[str, set[str]] = {
     "tight": {
@@ -43,37 +43,64 @@ def in_preset(card_a: str, card_b: str, preset_name: str) -> bool:
     return hand_key(card_a, card_b) in RANGE_PRESETS[key]
 
 
+@lru_cache(maxsize=None)
+def _preset_combos(preset_name: str, card_cls: object) -> tuple[tuple[int, int], ...]:
+    """Every concrete two-card combo in a preset, as evaluator card ints."""
+    suits = "shdc"
+    combos: list[tuple[int, int]] = []
+    for key in RANGE_PRESETS[preset_name]:
+        r1, r2 = key[0], key[1]
+        if r1 == r2:
+            pairs = [(s1, s2) for i, s1 in enumerate(suits) for s2 in suits[i + 1:]]
+        elif key[2] == "s":
+            pairs = [(s, s) for s in suits]
+        else:
+            pairs = [(s1, s2) for s1 in suits for s2 in suits if s1 != s2]
+        combos.extend((card_cls.new(r1 + s1), card_cls.new(r2 + s2)) for s1, s2 in pairs)
+    return tuple(combos)
+
+
 def sample_hole_cards(
     available_cards: list[int],
     num_opponents: int,
     rng: Random,
     card_cls: object,
     preset_name: str | None = None,
+    fallback_counter: list[int] | None = None,
 ) -> list[tuple[int, int]]:
     if preset_name is None:
         drawn = rng.sample(available_cards, 2 * num_opponents)
         return [(drawn[i], drawn[i + 1]) for i in range(0, len(drawn), 2)]
 
-    if preset_name.lower() not in RANGE_PRESETS:
+    key = preset_name.lower()
+    if key not in RANGE_PRESETS:
         raise ValueError(f"Unknown range preset: {preset_name}")
 
+    combos = _preset_combos(key, card_cls)
     result: list[tuple[int, int]] = []
-    remaining = list(available_cards)
+    remaining = set(available_cards)
     for _ in range(num_opponents):
-        found = False
-        for _attempt in range(500):
-            c1, c2 = rng.sample(remaining, 2)
-            if in_preset(card_int_to_str(c1, card_cls), card_int_to_str(c2, card_cls), preset_name):
-                result.append((c1, c2))
-                remaining.remove(c1)
-                remaining.remove(c2)
-                found = True
+        # Most combos are usually live, so a few uniform picks almost always succeed;
+        # fall back to scanning the whole range only when blockers make hits rare.
+        chosen = None
+        for _attempt in range(20):
+            c1, c2 = rng.choice(combos)
+            if c1 in remaining and c2 in remaining:
+                chosen = (c1, c2)
                 break
-        if not found:
-            drawn = rng.sample(remaining, 2)
-            result.append((drawn[0], drawn[1]))
-            remaining.remove(drawn[0])
-            remaining.remove(drawn[1])
+        if chosen is None:
+            live = [(c1, c2) for c1, c2 in combos if c1 in remaining and c2 in remaining]
+            if live:
+                chosen = rng.choice(live)
+            else:
+                # Range exhausted by hero, board and earlier opponents: deal a random hand.
+                c1, c2 = rng.sample(sorted(remaining), 2)
+                chosen = (c1, c2)
+                if fallback_counter is not None:
+                    fallback_counter[0] += 1
+        result.append(chosen)
+        remaining.discard(chosen[0])
+        remaining.discard(chosen[1])
     return result
 
 

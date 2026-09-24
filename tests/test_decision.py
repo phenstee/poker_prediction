@@ -116,3 +116,47 @@ def test_bet_size_present_when_action_is_bet() -> None:
     assert advice.action == "BET"
     assert advice.recommended_raise_bb is not None
     assert advice.recommended_raise_label is not None
+
+
+def test_short_stack_cannot_raise_so_calls_all_in() -> None:
+    advice = recommend_action(
+        equity=0.90,
+        pot_size=20,
+        facing_bet=10,
+        iterations=1000,
+        hand_class="Flush",
+        effective_stack_bb=5,
+        street="flop",
+    )
+    assert advice.action == "CALL"
+    assert advice.recommended_raise_bb is None
+
+
+def test_raise_capped_by_stack_is_labelled_all_in() -> None:
+    advice = recommend_action(
+        equity=0.90,
+        pot_size=20,
+        facing_bet=10,
+        iterations=1000,
+        hand_class="Flush",
+        effective_stack_bb=12,
+        street="flop",
+    )
+    assert advice.action == "RAISE"
+    assert advice.recommended_raise_bb == 12
+    assert advice.recommended_raise_label == "All-in 12.0 bb"
+
+
+def test_raise_without_legal_size_falls_back_to_call() -> None:
+    advice = recommend_action(
+        equity=0.90,
+        pot_size=20,
+        facing_bet=10,
+        iterations=1000,
+        hand_class="Flush",
+        effective_stack_bb=100,
+        street="flop",
+        max_raise=10,
+    )
+    assert advice.action == "CALL"
+    assert advice.recommended_raise_bb is None

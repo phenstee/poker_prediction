@@ -10,7 +10,7 @@ import { useToast } from "../components/ui/toast";
 import { stepToStreet, useSessionStore } from "../store/session";
 import { buildBeginnerCopySummary } from "../utils/copy";
 import { nowIso } from "../utils/format";
-import type { AdviceRequest } from "../utils/validation";
+import { buildAdviceRequest } from "../utils/request";
 
 function initialConnection(): ConnectionInfo {
   const cfg = getApiConfig();
@@ -134,17 +134,15 @@ export default function App() {
       return;
     }
 
-    const payload: AdviceRequest = {
-      hero_hole: [heroHole[0], heroHole[1]],
+    const payload = buildAdviceRequest({
+      heroHole: [heroHole[0], heroHole[1]],
       board: boardForStreet.filter((c): c is string => Boolean(c)),
       street,
-      num_opponents: currentOpponents,
-      opponents_by_street: opponentsByStreet,
-      pot_bb: potBb,
-      facing_bet_bb: toCallBb,
-      allow_bluffs: allowBluffs,
-      mode: "ml",
-    };
+      numOpponents: currentOpponents,
+      potBb,
+      toCallBb,
+      allowBluffs,
+    });
 
     setLastRequestPayload(payload);
     await mutation.mutateAsync(payload);

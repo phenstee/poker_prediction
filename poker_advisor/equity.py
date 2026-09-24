@@ -34,6 +34,8 @@ class EquityResult:
     iterations: int
     hand_class: str
     backend: str
+    # Opponent hands dealt at random because no hand in the requested range was still available.
+    range_fallbacks: int = 0
 
 
 def _default_iterations(board_len: int, config: MonteCarloConfig) -> int:
@@ -93,6 +95,8 @@ def estimate_equity(
 
     evaluator = Evaluator()
     wins = ties = losses = 0
+    split_share = 0.0
+    range_fallbacks = [0]
 
     for _ in range(total_iterations):
         opp_hands = sample_hole_cards(
@@ -101,6 +105,7 @@ def estimate_equity(
             rng=rng,
             card_cls=Card,
             preset_name=opponent_range,
+            fallback_counter=range_fallbacks,
         )
 
         used = {c for hand in opp_hands for c in hand}
@@ -115,10 +120,12 @@ def estimate_equity(
             losses += 1
         elif any(score == hero_score for score in opp_scores):
             ties += 1
+            # Pot is split evenly between hero and every opponent tied at the best hand.
+            split_share += 1.0 / (1 + sum(score == hero_score for score in opp_scores))
         else:
             wins += 1
 
-    equity = (wins + 0.5 * ties) / total_iterations
+    equity = (wins + split_share) / total_iterations
     return EquityResult(
         equity=equity,
         wins=wins,
@@ -127,4 +134,5 @@ def estimate_equity(
         iterations=total_iterations,
         hand_class=_hand_class(hero_int, board_int),
         backend=EVALUATOR_BACKEND,
+        range_fallbacks=range_fallbacks[0],
     )

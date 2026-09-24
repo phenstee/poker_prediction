@@ -18,11 +18,11 @@ A full-stack Texas Hold'em decision assistant. Enter your hole cards, the board,
 
 ### 1. Equity estimation (`poker_advisor/equity.py`)
 
-Deals the unknown cards at random thousands of times, evaluates every showdown with the [`treys`](https://github.com/ihendley/treys) hand evaluator, and reports `equity = (wins + ties / 2) / iterations`.
+Deals the unknown cards at random thousands of times, evaluates every showdown with the [`treys`](https://github.com/ihendley/treys) hand evaluator, and reports equity as the average share of the pot won. A tie among *k* players counts as 1/*k* of a win.
 
 - Sample counts scale by street: 20k preflop, 10k flop, 7.5k turn, 5k river.
 - Supports 1–8 opponents.
-- Opponents can hold random cards or be restricted to a preset range (`tight`, `standard`, `loose`; see `ranges.py`) through rejection sampling.
+- Opponents can hold random cards or be restricted to a preset range (`tight`, `standard`, `loose`; see `ranges.py`). Range hands are drawn uniformly from the preset's precomputed card combinations. If blockers leave no range hand available, the opponent gets a random hand, and `EquityResult.range_fallbacks` counts how often that happened.
 
 ### 2. Decision policy (`poker_advisor/decision.py`)
 
@@ -36,7 +36,7 @@ Compares equity with pot odds, `facing_bet / (pot + facing_bet)`:
 | No bet | equity ≥ 62% | BET |
 | No bet | otherwise | CHECK |
 
-Bet sizing depends on the street (½ pot preflop, ⅔ pot on the flop and turn, ¾ pot on the river). Raises go to the bet plus the larger of ⅔·pot and 2×bet. Every size respects min/max raise limits, is capped by the effective stack, and is rounded to 0.5 bb.
+Bet sizing depends on the street (½ pot preflop, ⅔ pot on the flop and turn, ¾ pot on the river). Raises go to the bet plus the larger of ⅔·pot and 2×bet. Every size respects min/max raise limits, is capped by the effective stack, and is rounded to 0.5 bb. A size capped by the stack is labelled "All-in". If the stack is at or below the bet, or no legal raise size fits the limits, the engine recommends CALL instead of RAISE.
 
 ### 3. ML policy (`ml/`)
 
@@ -55,7 +55,7 @@ pip install -r requirements-dev.txt
 npm install
 npm --prefix poker_advisor_ui install
 
-# optional: train the model used by mode="ml" (~3 s)
+# optional: train the model for the API's mode="ml" (~3 s); the UI uses the rule engine
 python -m ml.train --data data/train_balanced.csv --model models/action_model_balanced.joblib
 
 npm run dev
